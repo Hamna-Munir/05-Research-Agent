@@ -1,0 +1,56 @@
+# Environment
+.env
+.venv
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local config / secrets
+*.env.local
+secrets.json
+
+# Cache
+.cache/
+.mypy_cache/
+.ruff_cache/
+
+# Vector DB / agent run artifacts
+chroma_db/
+*.sqlite3
+
+# Distribution
+*.egg
+MANIFEST
