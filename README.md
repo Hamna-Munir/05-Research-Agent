@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="AI Research Agent Banner" width="100%"/>
+  <img src="assets/banner.svg?v=2" alt="AI Research Agent Banner" width="100%"/>
 </p>
 
 <p align="center">
