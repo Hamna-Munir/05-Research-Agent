@@ -30,7 +30,9 @@ def generate_search_query(subtask: str) -> str:
         subtask: the research subtask from planner.py.
 
     Returns:
-        A short (3-8 word) search query.
+        A short (3-8 word) search query. Falls back to a simple
+        heuristic-shortened version of the subtask if the LLM call
+        returns nothing usable.
     """
     response = client.chat.completions.create(
         model=GROQ_MODEL,
@@ -39,14 +41,34 @@ def generate_search_query(subtask: str) -> str:
             "content": (
                 f"Convert this research subtask into a short, specific web "
                 f"search query (3-8 words, no instructional phrasing like "
-                f"'define' or 'identify'). Return ONLY the query.\n\n"
+                f"'define' or 'identify'). Return ONLY the query, nothing else.\n\n"
                 f"Subtask: {subtask}"
             ),
         }],
         temperature=0.1,
-        max_tokens=30,
+        max_tokens=150,  # reasoning models (e.g. gpt-oss) use tokens for
+                         # internal reasoning before the visible answer —
+                         # 30 was too low and produced empty content every time
     )
-    return response.choices[0].message.content.strip().strip('"')
+    query = (response.choices[0].message.content or "").strip().strip('"')
+
+    if query:
+        return query
+
+    # Fallback: strip common instructional verbs and take the first few
+    # meaningful words, rather than sending an empty query to the search tool
+    return _fallback_query(subtask)
+
+
+def _fallback_query(subtask: str) -> str:
+    """Simple heuristic fallback if the LLM query-generation call fails."""
+    stop_prefixes = [
+        "define", "identify", "explain", "describe", "summarize", "compare",
+        "analyze", "evaluate", "assess", "investigate", "conduct", "discuss",
+        "the", "and", "or", "of", "for", "with", "a", "an",
+    ]
+    words = [w for w in subtask.replace(",", " ").split() if w.lower().strip(".:;") not in stop_prefixes]
+    return " ".join(words[:8]) if words else subtask[:60]
 
 
 def execute_subtask(subtask: str, max_results: int = 3) -> dict:
