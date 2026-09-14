@@ -16,6 +16,39 @@ from src.prompts import SYNTHESIS_SYSTEM_PROMPT, build_synthesis_prompt
 client = OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL)
 
 
+def generate_search_query(subtask: str) -> str:
+    """
+    Day 31 fix — converts a verbose, instructional subtask (e.g.
+    "Define the acronym 'RAG' and identify its full form(s) in various
+    contexts") into a short, search-engine-friendly query (e.g.
+    "RAG acronym meaning AI"). Without this step, the raw subtask
+    sentence was being sent directly to the search tool, and its
+    stray instructional words (e.g. "identify", "compare") were
+    matching unrelated results instead of the actual topic.
+
+    Args:
+        subtask: the research subtask from planner.py.
+
+    Returns:
+        A short (3-8 word) search query.
+    """
+    response = client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[{
+            "role": "user",
+            "content": (
+                f"Convert this research subtask into a short, specific web "
+                f"search query (3-8 words, no instructional phrasing like "
+                f"'define' or 'identify'). Return ONLY the query.\n\n"
+                f"Subtask: {subtask}"
+            ),
+        }],
+        temperature=0.1,
+        max_tokens=30,
+    )
+    return response.choices[0].message.content.strip().strip('"')
+
+
 def execute_subtask(subtask: str, max_results: int = 3) -> dict:
     """
     Runs a web search for one research subtask and summarizes the
@@ -28,13 +61,14 @@ def execute_subtask(subtask: str, max_results: int = 3) -> dict:
     Returns:
         A dict with 'subtask', 'summary', and 'sources' (list of URLs).
     """
-    results = web_search(subtask, max_results=max_results)
+    search_query = generate_search_query(subtask)
+    results = web_search(search_query, max_results=max_results)
 
     if results and "error" in results[0]:
-        return {"subtask": subtask, "summary": f"Search failed: {results[0]['error']}", "sources": []}
+        return {"subtask": subtask, "search_query": search_query, "summary": f"Search failed: {results[0]['error']}", "sources": []}
 
     if not results:
-        return {"subtask": subtask, "summary": "No search results found.", "sources": []}
+        return {"subtask": subtask, "search_query": search_query, "summary": "No search results found.", "sources": []}
 
     combined_text = "\n\n".join(f"{r['title']}: {r['snippet']}" for r in results)
     sources = [r["url"] for r in results if r.get("url")]
@@ -54,6 +88,7 @@ def execute_subtask(subtask: str, max_results: int = 3) -> dict:
 
     return {
         "subtask": subtask,
+        "search_query": search_query,
         "summary": response.choices[0].message.content,
         "sources": sources,
     }
