@@ -55,7 +55,6 @@ st.markdown(
             color: var(--ink);
         }
 
-        /* Crisp, low-opacity background tint — no blur, no haze */
         .stApp {
             background-color: var(--bg);
             background-image:
@@ -79,7 +78,6 @@ st.markdown(
             color: var(--gold);
         }
 
-        /* ---------- Top nav ---------- */
         .topnav {
             display: flex;
             align-items: center;
@@ -109,7 +107,6 @@ st.markdown(
             box-shadow: var(--shadow-soft);
         }
 
-        /* ---------- Hero (glow is a pseudo-element, so it never affects layout) --- */
         .hero-wrap {
             position: relative;
             text-align: center;
@@ -153,7 +150,6 @@ st.markdown(
             line-height: 1.6;
         }
 
-        /* ---------- Segmented depth control (native buttons — reliable) ---------- */
         div[data-testid="column"] .stButton > button {
             border-radius: 999px !important;
             padding: 0.6rem 1.5rem !important;
@@ -180,8 +176,6 @@ st.markdown(
             color: var(--ink) !important;
         }
 
-        /* ---------- Ask card — a REAL st.container(key="ask_card"), so this
-           class genuinely wraps the text input + buttons rendered inside it --- */
         div.st-key-ask_card {
             background: var(--card-bg);
             border: 1px solid var(--border);
@@ -234,7 +228,6 @@ st.markdown(
             margin-bottom: 2rem;
         }
 
-        /* ---------- Section headers ---------- */
         .section-label {
             display: flex;
             align-items: center;
@@ -253,7 +246,6 @@ st.markdown(
             font-size: 0.85rem;
         }
 
-        /* ---------- Plan card (built as ONE html string -> real nesting) ------- */
         .plan-card {
             background: var(--card-bg);
             border: 1px solid var(--border);
@@ -272,7 +264,6 @@ st.markdown(
             display: flex; align-items: center; justify-content: center;
         }
 
-        /* ---------- Report card ---------- */
         .report-card {
             background: var(--card-bg);
             border: 1px solid var(--border);
@@ -285,10 +276,6 @@ st.markdown(
         .report-card h1, .report-card h2, .report-card h3 { color: var(--ink); }
         .report-card * { max-width: 100%; }
 
-        /* Sources / findings tables — long raw URLs were overflowing past the
-           card edge, but the previous fix (break-all + fixed narrow columns)
-           was too aggressive and broke normal words letter-by-letter. This
-           version only breaks a word when it truly doesn't fit. */
         .report-card table {
             width: 100%;
             border-collapse: collapse;
@@ -318,7 +305,6 @@ st.markdown(
         }
         .report-card a:hover { color: var(--green); border-color: var(--green); }
 
-        /* ---------- Expanders / alerts ---------- */
         div[data-testid="stExpander"] {
             border: 1px solid var(--border) !important;
             border-radius: var(--radius-md) !important;
@@ -331,6 +317,17 @@ st.markdown(
         div[data-testid="stAlert"] {
             border-radius: var(--radius-sm) !important;
             border: 1px solid var(--border) !important;
+        }
+
+        .search-query-tag {
+            display: inline-block;
+            background: #F1E9D8;
+            color: var(--gold);
+            font-family: monospace;
+            font-size: 0.78rem;
+            padding: 3px 10px;
+            border-radius: 999px;
+            margin: 4px 0 8px 0;
         }
 
         .footer-note {
@@ -372,7 +369,7 @@ st.markdown(
 )
 
 # ----------------------------------------------------------------------------
-# HERO — glow is a pure CSS pseudo-element, so it can never push layout down
+# HERO
 # ----------------------------------------------------------------------------
 st.markdown(
     """
@@ -394,7 +391,7 @@ st.markdown(
 )
 
 # ----------------------------------------------------------------------------
-# DEPTH SELECTOR — real buttons acting as a segmented pill control
+# DEPTH SELECTOR
 # ----------------------------------------------------------------------------
 if "depth_label" not in st.session_state:
     st.session_state.depth_label = "Standard"
@@ -411,7 +408,7 @@ for col, label in zip(seg_cols, depth_options):
 depth_label = st.session_state.depth_label
 
 # ----------------------------------------------------------------------------
-# ASK CARD — a real st.container so the CSS class wraps its actual children
+# ASK CARD
 # ----------------------------------------------------------------------------
 with st.container(key="ask_card"):
     question = st.text_input(
@@ -429,7 +426,7 @@ with st.container(key="ask_card"):
         start_clicked = st.button("Start Research →", use_container_width=True, key="start_btn")
 
 st.markdown(
-    '<div class="hint-line">Or try: “Should a startup use AI agents for customer support?”</div>',
+    '<div class="hint-line">Or try: "Should a startup use AI agents for customer support?"</div>',
     unsafe_allow_html=True,
 )
 
@@ -460,6 +457,8 @@ if start_clicked and question.strip():
     with st.expander("🔍  Findings per subtask"):
         for finding in result["findings"]:
             st.markdown(f"**{finding['subtask']}**")
+            if finding.get("search_query"):
+                st.markdown(f'<span class="search-query-tag">🔎 {finding["search_query"]}</span>', unsafe_allow_html=True)
             st.write(finding["summary"])
             if finding["sources"]:
                 st.caption("Sources: " + ", ".join(finding["sources"]))
