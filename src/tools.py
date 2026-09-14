@@ -64,12 +64,12 @@ def web_search(query: str, max_results: int = 5) -> list[dict]:
     Searches the web and returns a list of results, each with a title,
     snippet, and URL — preserving sources rather than discarding them.
 
-    Retries once with a short delay if the first attempt returns zero
-    results, since DuckDuckGo's search backend intermittently rate-limits
-    or returns empty results under rapid successive calls (common when
-    a research agent runs several subtask searches back-to-back) even
-    for well-documented topics — this isn't the same as genuinely
-    finding nothing.
+    Retries with exponential backoff if a search returns zero results,
+    since DuckDuckGo's free search backend intermittently rate-limits
+    under rapid successive calls (common when a research agent runs
+    several subtask searches back-to-back, and especially noticeable
+    during repeated testing within a short time window) — this isn't
+    the same as genuinely finding nothing on a well-documented topic.
 
     Args:
         query: the search query.
@@ -77,14 +77,16 @@ def web_search(query: str, max_results: int = 5) -> list[dict]:
 
     Returns:
         A list of dicts with 'title', 'snippet', 'url', or an error dict
-        if the search itself fails after retrying.
+        if the search still fails after all retries.
     """
     if not query or not query.strip():
         return [{"error": "Empty search query."}]
 
     import time
 
-    for attempt in range(2):
+    backoff_seconds = [2, 4, 8]  # exponential backoff across 3 retries
+
+    for attempt in range(len(backoff_seconds) + 1):
         try:
             with DDGS() as ddgs:
                 results = list(ddgs.text(query, max_results=max_results))
@@ -99,19 +101,24 @@ def web_search(query: str, max_results: int = 5) -> list[dict]:
                     for r in results
                 ]
 
-            # Empty result on first attempt — likely a transient
-            # rate-limit, not genuinely zero information. Wait and retry once.
-            if attempt == 0:
-                time.sleep(2)
+            if attempt < len(backoff_seconds):
+                time.sleep(backoff_seconds[attempt])
                 continue
 
         except Exception as e:
-            if attempt == 0:
-                time.sleep(2)
+            if attempt < len(backoff_seconds):
+                time.sleep(backoff_seconds[attempt])
                 continue
-            return [{"error": f"Search failed after retry: {str(e)}"}]
+            return [{"error": f"Search failed after retries: {str(e)}"}]
 
-    return [{"error": "No results after retry — likely rate-limited by the search backend. Try again shortly."}]
+    return [{
+        "error": (
+            "No results after multiple retries — the free search backend is "
+            "likely rate-limited from repeated testing. Wait a minute before "
+            "trying again, or see README's Future Improvements for switching "
+            "to a paid search API for production reliability."
+        )
+    }]
 
 
 # ---------------------------------------------------------------------------
