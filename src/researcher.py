@@ -156,6 +156,13 @@ def run_research(research_question: str, subtasks: list[str], depth_results: int
     Returns:
         A dict with 'report' (final text) and 'findings' (per-subtask detail).
     """
-    findings = [execute_subtask(subtask, max_results=depth_results) for subtask in subtasks]
+    import time
+
+    findings = []
+    for i, subtask in enumerate(subtasks):
+        findings.append(execute_subtask(subtask, max_results=depth_results))
+        if i < len(subtasks) - 1:
+            time.sleep(1)  # small gap between searches — reduces rate-limiting
+
     report = synthesize_report(research_question, findings)
     return {"report": report, "findings": findings}
