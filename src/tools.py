@@ -64,30 +64,54 @@ def web_search(query: str, max_results: int = 5) -> list[dict]:
     Searches the web and returns a list of results, each with a title,
     snippet, and URL — preserving sources rather than discarding them.
 
+    Retries once with a short delay if the first attempt returns zero
+    results, since DuckDuckGo's search backend intermittently rate-limits
+    or returns empty results under rapid successive calls (common when
+    a research agent runs several subtask searches back-to-back) even
+    for well-documented topics — this isn't the same as genuinely
+    finding nothing.
+
     Args:
         query: the search query.
         max_results: how many results to return.
 
     Returns:
         A list of dicts with 'title', 'snippet', 'url', or an error dict
-        if the search itself fails.
+        if the search itself fails after retrying.
     """
     if not query or not query.strip():
         return [{"error": "Empty search query."}]
 
-    try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
-        return [
-            {
-                "title": r.get("title", ""),
-                "snippet": r.get("body", ""),
-                "url": r.get("href", ""),
-            }
-            for r in results
-        ]
-    except Exception as e:
-        return [{"error": f"Search failed: {str(e)}"}]
+    import time
+
+    for attempt in range(2):
+        try:
+            with DDGS() as ddgs:
+                results = list(ddgs.text(query, max_results=max_results))
+
+            if results:
+                return [
+                    {
+                        "title": r.get("title", ""),
+                        "snippet": r.get("body", ""),
+                        "url": r.get("href", ""),
+                    }
+                    for r in results
+                ]
+
+            # Empty result on first attempt — likely a transient
+            # rate-limit, not genuinely zero information. Wait and retry once.
+            if attempt == 0:
+                time.sleep(2)
+                continue
+
+        except Exception as e:
+            if attempt == 0:
+                time.sleep(2)
+                continue
+            return [{"error": f"Search failed after retry: {str(e)}"}]
+
+    return [{"error": "No results after retry — likely rate-limited by the search backend. Try again shortly."}]
 
 
 # ---------------------------------------------------------------------------
