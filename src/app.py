@@ -312,8 +312,22 @@ st.markdown(
             box-shadow: var(--shadow-soft);
             margin-top: 0.9rem;
         }
-        div[data-testid="stExpander"] summary { font-weight: 600 !important; }
+        div[data-testid="stExpander"] summary { font-weight: 600 !important; color: var(--ink) !important; }
         div[data-testid="stExpander"] a { overflow-wrap: anywhere; }
+
+        /* Force visible text color everywhere inside expanders/cards,
+           regardless of the browser/OS dark-mode preference — without
+           this, Streamlit's own dark theme can render plain st.write()
+           text as near-white, making it invisible on our light cards. */
+        div[data-testid="stExpander"] p,
+        div[data-testid="stExpander"] li,
+        div[data-testid="stExpander"] span,
+        div[data-testid="stExpander"] div,
+        div[data-testid="stExpander"] strong,
+        div[data-testid="stExpander"] [data-testid="stMarkdownContainer"],
+        div[data-testid="stExpander"] [data-testid="stCaptionContainer"] {
+            color: var(--ink) !important;
+        }
         div[data-testid="stAlert"] {
             border-radius: var(--radius-sm) !important;
             border: 1px solid var(--border) !important;
