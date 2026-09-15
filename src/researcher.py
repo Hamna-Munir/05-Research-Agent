@@ -78,8 +78,25 @@ def _filter_and_dedupe(results: list[dict], subtask: str) -> list[dict]:
     the subtask (e.g. the "RAG" search returning document-comparison
     tools like Diffchecker). If filtering would remove everything,
     keep the original top result rather than returning nothing.
+
+    Known limitation: this is keyword matching, not semantic
+    understanding (see Week 4) — a short shared word like "tool" can
+    still let through an unrelated result (e.g. the rock band "Tool")
+    since the word literally overlaps even though the meaning doesn't.
+    A small exclusion list below catches the most common obvious cases
+    of this without building a full semantic filter, which would be
+    out of scope for this project.
     """
     subtask_words = set(w.lower() for w in subtask.split() if len(w) > 3)
+
+    # Catches obvious false positives that pure keyword overlap misses —
+    # e.g. a subtask about "tool calling" matching the band "Tool" because
+    # both literally contain the word "tool". Not a general solution,
+    # just a cheap filter for the most common unrelated-domain patterns.
+    OFF_TOPIC_SIGNALS = [
+        "band", "album", "lyrics", "song", "discography", "music video",
+        "tour dates", "setlist",
+    ]
 
     seen_domains = set()
     filtered = []
@@ -89,6 +106,10 @@ def _filter_and_dedupe(results: list[dict], subtask: str) -> list[dict]:
             continue
 
         text = (r.get("title", "") + " " + r.get("snippet", "")).lower()
+
+        if any(signal in text for signal in OFF_TOPIC_SIGNALS):
+            continue  # obvious false positive — skip regardless of keyword overlap
+
         overlap = sum(1 for w in subtask_words if w in text)
 
         if overlap > 0 or not filtered:  # always keep at least one result
