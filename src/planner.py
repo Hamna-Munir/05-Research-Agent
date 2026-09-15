@@ -24,16 +24,23 @@ def create_research_plan(research_question: str) -> list[str]:
     """
     prompt = build_planning_prompt(research_question)
 
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.3,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+        )
+        raw_text = response.choices[0].message.content
+        if not raw_text or not raw_text.strip():
+            raise ValueError("Empty plan returned")
+    except Exception:
+        # Reliability fix: if planning fails, don't crash — research the
+        # original question directly as a single subtask instead.
+        return [research_question]
 
-    raw_text = response.choices[0].message.content
     return _parse_numbered_list(raw_text)
 
 
