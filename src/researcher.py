@@ -71,31 +71,38 @@ def _fallback_query(subtask: str) -> str:
     return " ".join(words[:8]) if words else subtask[:60]
 
 
-def _filter_and_dedupe(results: list[dict], subtask: str) -> list[dict]:
+def _filter_and_dedupe(results: list[dict], subtask: str, search_query: str) -> list[dict]:
     """
-    Basic search-quality fix: removes duplicate sources (same domain
-    seen twice) and drops results that share no keywords at all with
-    the subtask (e.g. the "RAG" search returning document-comparison
-    tools like Diffchecker). If filtering would remove everything,
-    keep the original top result rather than returning nothing.
+    Search-quality filter: removes duplicate-domain results and rejects
+    results that don't meaningfully relate to the subtask.
 
-    Known limitation: this is keyword matching, not semantic
-    understanding (see Week 4) — a short shared word like "tool" can
-    still let through an unrelated result (e.g. the rock band "Tool")
-    since the word literally overlaps even though the meaning doesn't.
-    A small exclusion list below catches the most common obvious cases
-    of this without building a full semantic filter, which would be
-    out of scope for this project.
+    Fix (this round): the previous version had a loop bug where the
+    "keep at least one result" fallback was checked INSIDE the loop
+    (`not filtered`), which meant the very first result processed was
+    always kept regardless of relevance, since `filtered` starts empty.
+    This is exactly why fully unrelated results (printable-ruler.net,
+    Wikileaks Vault 7, toolband.com) were slipping through — they just
+    happened to be first in the list. The fallback now only applies
+    after ALL results have been checked, and per the current
+    requirement, there IS no keep-anything fallback anymore: if
+    nothing is genuinely relevant, this returns an empty list, and
+    execute_subtask reports "insufficient relevant evidence" instead
+    of citing an unrelated source.
+
+    Relevance is judged by keyword overlap with BOTH the original
+    subtask and the generated search query, requiring a meaningful
+    fraction of words to match (not just one incidental word like
+    "tool" matching a band name) — plus a small exclusion list for
+    common obvious false-positive categories.
     """
-    subtask_words = set(w.lower() for w in subtask.split() if len(w) > 3)
+    query_words = set(w.lower() for w in (subtask + " " + search_query).split() if len(w) > 3)
+    # Require at least half the meaningful words to appear (min 2),
+    # so a single incidental word match (e.g. "tool") isn't enough.
+    min_overlap = max(2, len(query_words) // 2)
 
-    # Catches obvious false positives that pure keyword overlap misses —
-    # e.g. a subtask about "tool calling" matching the band "Tool" because
-    # both literally contain the word "tool". Not a general solution,
-    # just a cheap filter for the most common unrelated-domain patterns.
     OFF_TOPIC_SIGNALS = [
         "band", "album", "lyrics", "song", "discography", "music video",
-        "tour dates", "setlist",
+        "tour dates", "setlist", "ticket presale", "fan club",
     ]
 
     seen_domains = set()
@@ -108,15 +115,16 @@ def _filter_and_dedupe(results: list[dict], subtask: str) -> list[dict]:
         text = (r.get("title", "") + " " + r.get("snippet", "")).lower()
 
         if any(signal in text for signal in OFF_TOPIC_SIGNALS):
-            continue  # obvious false positive — skip regardless of keyword overlap
+            continue
 
-        overlap = sum(1 for w in subtask_words if w in text)
+        overlap = sum(1 for w in query_words if w in text)
+        if overlap < min_overlap:
+            continue  # not relevant enough — reject, no exceptions
 
-        if overlap > 0 or not filtered:  # always keep at least one result
-            seen_domains.add(domain)
-            filtered.append(r)
+        seen_domains.add(domain)
+        filtered.append(r)
 
-    return filtered if filtered else results[:1]
+    return filtered  # empty is a valid, honest outcome now
 
 
 def execute_subtask(subtask: str, max_results: int = 3) -> dict:
