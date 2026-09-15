@@ -71,6 +71,33 @@ def _fallback_query(subtask: str) -> str:
     return " ".join(words[:8]) if words else subtask[:60]
 
 
+def _filter_and_dedupe(results: list[dict], subtask: str) -> list[dict]:
+    """
+    Basic search-quality fix: removes duplicate sources (same domain
+    seen twice) and drops results that share no keywords at all with
+    the subtask (e.g. the "RAG" search returning document-comparison
+    tools like Diffchecker). If filtering would remove everything,
+    keep the original top result rather than returning nothing.
+    """
+    subtask_words = set(w.lower() for w in subtask.split() if len(w) > 3)
+
+    seen_domains = set()
+    filtered = []
+    for r in results:
+        domain = r["url"].split("/")[2] if r.get("url") and "//" in r["url"] else r.get("url", "")
+        if domain in seen_domains:
+            continue
+
+        text = (r.get("title", "") + " " + r.get("snippet", "")).lower()
+        overlap = sum(1 for w in subtask_words if w in text)
+
+        if overlap > 0 or not filtered:  # always keep at least one result
+            seen_domains.add(domain)
+            filtered.append(r)
+
+    return filtered if filtered else results[:1]
+
+
 def execute_subtask(subtask: str, max_results: int = 3) -> dict:
     """
     Runs a web search for one research subtask and summarizes the
@@ -92,6 +119,9 @@ def execute_subtask(subtask: str, max_results: int = 3) -> dict:
     if not results:
         return {"subtask": subtask, "search_query": search_query, "summary": "No search results found.", "sources": []}
 
+    # Search-quality fix: drop irrelevant/duplicate results before summarizing
+    results = _filter_and_dedupe(results, subtask)
+
     combined_text = "\n\n".join(f"{r['title']}: {r['snippet']}" for r in results)
     sources = [r["url"] for r in results if r.get("url")]
 
@@ -101,17 +131,23 @@ def execute_subtask(subtask: str, max_results: int = 3) -> dict:
         f"Give a concise 2-4 sentence summary, using only this information."
     )
 
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[{"role": "user", "content": summary_prompt}],
-        temperature=0.2,
-        max_tokens=300,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": summary_prompt}],
+            temperature=0.2,
+            max_tokens=300,
+        )
+        summary = response.choices[0].message.content or "Could not generate a summary from the search results."
+    except Exception as e:
+        # Reliability fix: a failed summarization call no longer crashes
+        # the whole research run — fall back to the raw search snippets.
+        summary = f"(Summary generation failed — showing raw snippets) {combined_text[:400]}"
 
     return {
         "subtask": subtask,
         "search_query": search_query,
-        "summary": response.choices[0].message.content,
+        "summary": summary,
         "sources": sources,
     }
 
@@ -130,17 +166,75 @@ def synthesize_report(research_question: str, findings: list[dict]) -> str:
     """
     prompt = build_synthesis_prompt(research_question, findings)
 
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": SYNTHESIS_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.3,
-        max_tokens=1200,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": SYNTHESIS_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=2500,  # was 1200 — too low, cutting off the
+                              # Recommendation section before it finished
+        )
+        report = response.choices[0].message.content
+        if not report or not report.strip():
+            raise ValueError("Empty report returned")
+    except Exception as e:
+        # Reliability fix: never crash — return a clear, honest fallback
+        # instead of letting the Streamlit app show a raw traceback.
+        return (
+            "## Executive Summary\n"
+            "The report could not be generated due to an error contacting "
+            "the language model. Please try again.\n\n"
+            f"## Limitations\nTechnical error: {str(e)}"
+        )
 
-    return response.choices[0].message.content
+    report = _ensure_required_sections(report, research_question, findings)
+    return report
+
+
+REQUIRED_SECTIONS = [
+    "Executive Summary", "Key Findings", "Evidence",
+    "Sources", "Limitations", "Recommendation",
+]
+
+
+def _ensure_required_sections(report: str, research_question: str, findings: list[dict]) -> str:
+    """
+    Report-completeness fix: if the model's response is missing one of
+    the 6 required sections (most commonly Recommendation, when the
+    response got cut off), make one follow-up call asking only for the
+    missing section(s) and append it — rather than shipping an
+    incomplete report silently.
+    """
+    missing = [s for s in REQUIRED_SECTIONS if s not in report]
+    if not missing:
+        return report
+
+    try:
+        repair_prompt = (
+            f"The following research report is missing these required "
+            f"sections: {', '.join(missing)}.\n\n"
+            f"Research question: {research_question}\n\n"
+            f"Existing report:\n{report}\n\n"
+            f"Write ONLY the missing section(s) now, each starting with "
+            f"'## SectionName'. If there isn't enough evidence for a "
+            f"section, state that explicitly rather than leaving it blank."
+        )
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": repair_prompt}],
+            temperature=0.3,
+            max_tokens=800,
+        )
+        addition = response.choices[0].message.content
+        if addition and addition.strip():
+            return report + "\n\n" + addition
+    except Exception:
+        pass  # if the repair call also fails, ship the original report as-is
+
+    return report
 
 
 def run_research(research_question: str, subtasks: list[str], depth_results: int = 3) -> dict:
