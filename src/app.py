@@ -437,37 +437,48 @@ num_subtasks_hint = {"Quick": 2, "Standard": 5, "Deep": 7}
 # RESULTS
 # ----------------------------------------------------------------------------
 if start_clicked and question.strip():
-    with st.spinner("Planning research..."):
-        plan = create_research_plan(question)
-        plan = plan[: num_subtasks_hint[depth_label]] if depth_label != "Deep" else plan
+    try:
+        with st.spinner("Planning research..."):
+            plan = create_research_plan(question)
+            plan = plan[: num_subtasks_hint[depth_label]] if depth_label != "Deep" else plan
 
-    st.markdown('<div class="section-label"><span class="chip">🧩</span> Research Plan</div>', unsafe_allow_html=True)
-    steps_html = "".join(
-        f'<div class="plan-step"><span class="num">{i}</span><span>{subtask}</span></div>'
-        for i, subtask in enumerate(plan, start=1)
-    )
-    st.markdown(f'<div class="plan-card">{steps_html}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label"><span class="chip">🧩</span> Research Plan</div>', unsafe_allow_html=True)
+        steps_html = "".join(
+            f'<div class="plan-step"><span class="num">{i}</span><span>{subtask}</span></div>'
+            for i, subtask in enumerate(plan, start=1)
+        )
+        st.markdown(f'<div class="plan-card">{steps_html}</div>', unsafe_allow_html=True)
 
-    with st.spinner(f"Researching {len(plan)} subtasks ({depth_label} depth)..."):
-        result = run_research(question, plan, depth_results=DEPTH_SETTINGS[depth_label])
+        with st.spinner(f"Researching {len(plan)} subtasks ({depth_label} depth)..."):
+            result = run_research(question, plan, depth_results=DEPTH_SETTINGS[depth_label])
 
-    st.markdown('<div class="section-label"><span class="chip">📄</span> Research Report</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="report-card">{result["report"]}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label"><span class="chip">📄</span> Research Report</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="report-card">{result["report"]}</div>', unsafe_allow_html=True)
 
-    with st.expander("🔍  Findings per subtask"):
-        for finding in result["findings"]:
-            st.markdown(f"**{finding['subtask']}**")
-            if finding.get("search_query"):
-                st.markdown(f'<span class="search-query-tag">🔎 {finding["search_query"]}</span>', unsafe_allow_html=True)
-            st.write(finding["summary"])
-            if finding["sources"]:
-                st.caption("Sources: " + ", ".join(finding["sources"]))
-            st.markdown("---")
+        with st.expander("🔍  Findings per subtask"):
+            for finding in result["findings"]:
+                st.markdown(f"**{finding['subtask']}**")
+                if finding.get("search_query"):
+                    st.markdown(f'<span class="search-query-tag">🔎 {finding["search_query"]}</span>', unsafe_allow_html=True)
+                st.write(finding["summary"])
+                if finding["sources"]:
+                    st.caption("Sources: " + ", ".join(finding["sources"]))
+                st.markdown("---")
 
-    with st.expander("✅  Automatic quality checks"):
-        checks = evaluate_report(question, result["report"], result["findings"])
-        for check, passed in checks.items():
-            st.write(f"{'✅' if passed else '⚠️'} {check.replace('_', ' ').title()}")
+        with st.expander("✅  Automatic quality checks"):
+            checks = evaluate_report(question, result["report"], result["findings"])
+            for check, passed in checks.items():
+                st.write(f"{'✅' if passed else '⚠️'} {check.replace('_', ' ').title()}")
+
+    except Exception as e:
+        # Reliability fix: never show a raw traceback to the user.
+        st.error(
+            "Something went wrong while researching this question. "
+            "This is usually a temporary issue with the search or AI "
+            "service — please try again in a moment."
+        )
+        with st.expander("Technical details (for debugging)"):
+            st.code(str(e))
 
 elif start_clicked and not question.strip():
     st.warning("Please enter a research question first.")
