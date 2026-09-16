@@ -191,6 +191,17 @@ A regular chatbot receives a message and generates a response — a single, dire
 
 ---
 
+## ⚠️ Known Limitations (v1.0)
+
+Tested honestly against real questions, not just described in theory:
+
+- **Free search backend rate-limiting** — DuckDuckGo's free search library intermittently fails or returns zero results under repeated use (common when researching a question with 5-7 subtasks, or when testing multiple questions in a short window). The agent retries with backoff and reports this clearly when it happens, but it isn't fully eliminated. A paid search API (Tavily, SerpAPI, Bing Search API) would resolve this — deliberately not implemented in v1.0 to keep the project free to run.
+- **Occasional irrelevant search results on niche/speculative queries** — for questions with little indexed content (e.g., forecasting AI agents in 2040), the search engine itself sometimes returns unrelated results (seen in testing: a printable-ruler website, unrelated leaked-document archives). The agent's relevance filtering removes the most obvious false positives (keyword mismatches, known off-topic signal words) but cannot fully compensate when the search engine's own results are the problem, not the filtering.
+- **Keyword-based relevance filtering, not semantic** — the search-quality filter checks for literal word overlap and a short list of known false-positive signals (e.g. "band", "album" for the "Tool" name-collision case). It can still let through a result that shares a word but not the meaning, or miss a company/entity name not on the exclusion list. A proper fix would use embeddings-based semantic filtering (Week 4's approach), which is out of scope for this single-agent project by design.
+- **Vague original questions can produce generic, unhelpful subtask searches** — when the user's question doesn't name a concrete subject (e.g. "I can't log in" without naming which service), the planner still generates a subtask like "identify the specific platform," but there's genuinely nothing concrete to search for. The search then sometimes lands on a dictionary definition of a leftover generic word (e.g. "specific," "initiate," "comprehensive") rather than useful content. This isn't a query-cleaning bug to patch further — the underlying question itself lacked the information needed, and no amount of search-query engineering can supply a fact the user never provided. The correct fix belongs in Day 34's "handle vague questions" territory (asking a clarifying question back to the user), not in the search layer.
+
+These are documented rather than hidden — see `journal.md` for the specific test cases that revealed them.
+
 ## 🚀 Future Improvements
 
 - [ ] Add a real web search API (this week's search tool is intentionally simple)
