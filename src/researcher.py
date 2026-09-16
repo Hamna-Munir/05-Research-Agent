@@ -95,10 +95,17 @@ def _filter_and_dedupe(results: list[dict], subtask: str, search_query: str) -> 
     "tool" matching a band name) — plus a small exclusion list for
     common obvious false-positive categories.
     """
-    query_words = set(w.lower() for w in (subtask + " " + search_query).split() if len(w) > 3)
-    # Require at least half the meaningful words to appear (min 2),
-    # so a single incidental word match (e.g. "tool") isn't enough.
-    min_overlap = max(2, len(query_words) // 2)
+    # Fix (this round): the previous version combined the verbose subtask
+    # sentence (often 15-20+ meaningful words) with the search query and
+    # required half of THAT combined word count to match — an unreachable
+    # bar for any short 1-2 sentence search snippet, which caused
+    # genuinely relevant results (even for well-documented topics like
+    # "forgot password") to be wrongly rejected as "insufficient evidence".
+    # Basing the threshold on the search_query alone (already a short,
+    # focused 3-8 word query) keeps the bar meaningful without being
+    # impossible to satisfy.
+    query_words = set(w.lower() for w in search_query.split() if len(w) > 3)
+    min_overlap = max(1, len(query_words) // 3)
 
     OFF_TOPIC_SIGNALS = [
         "band", "album", "lyrics", "song", "discography", "music video",
