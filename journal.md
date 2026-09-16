@@ -118,6 +118,29 @@ Haven't yet measured actual wall-clock time for Quick vs Standard vs Deep on a r
 
 ---
 
+---
+
+## Post-Ship Audit — Reliability, Search Quality & Report Completeness
+
+**Today**
+Ran a structured audit against 4 real questions (customer support, a 2040 forecast, tool calling, and RAG) and fixed what the testing actually revealed:
+1. **Reliability** — wrapped the planner, researcher, and synthesis LLM calls in try/except so a failed API call returns a graceful fallback instead of crashing; wrapped the Streamlit app's research flow in try/except so a raw traceback is never shown to the user.
+2. **Report truncation** — the Recommendation section was getting cut off because `max_tokens` for synthesis was 1200. Increased to 2500 and added a repair step: if any of the 6 required sections is still missing after generation, one follow-up call asks specifically for the missing section(s) rather than shipping an incomplete report.
+3. **Search-quality filtering** — added `_filter_and_dedupe()` to drop duplicate-domain results and results with zero keyword overlap with the subtask (fixed the earlier "RAG" search returning Diffchecker-style document-comparison tools).
+4. **A "Tool (band)" false positive** — the keyword filter still let through a Wikipedia article about the rock band "Tool" for a "tool calling" subtask, since "tool" literally overlaps even though the meaning doesn't. Added a small exclusion list (band/album/lyrics/etc.) as a targeted, proportionate fix — not a full semantic filter, which would be out of scope.
+5. **A separate, unrelated theme bug** — text inside expanders was rendering nearly invisible (white-on-white) because Streamlit's dark-theme default was active (matching the browser/OS dark mode) and overriding the app's light-theme text color for un-styled `st.write()` content. Fixed with an explicit `.streamlit/config.toml` forcing light theme, plus CSS forcing text color inside expanders regardless of theme.
+
+**Biggest Problem**
+After all of the above, re-testing revealed the dominant remaining issue isn't code at all: DuckDuckGo's free search backend rate-limits heavily under repeated testing (3-4 of 5 subtasks failing outright in a single research run), and occasionally returns genuinely irrelevant results for niche or forward-looking queries (a printable-ruler website and an unrelated leaked-document archive both surfaced for a "2040 AI agents" query) — noise the search engine itself introduced, which no amount of downstream filtering can correct, since there was nothing relevant in the result set to select from.
+
+**How I Solved It**
+Recognized this as a genuine infrastructure ceiling, not a bug to keep patching. Continuing to add filtering rules would have been chasing symptoms of a free search library that's fundamentally rate-limited and occasionally low-quality — the honest fix is a paid search API (Tavily, SerpAPI, Bing Search API), which was a deliberate decision NOT to add in v1.0, to keep the project free to run. Documented this explicitly in the README's new "Known Limitations" section instead of leaving it as an implied gap or continuing to add speculative code fixes that testing wouldn't actually validate.
+
+**What I Would Improve**
+If reliability mattered more than staying free-tier (e.g., an actual production deployment), swapping in a paid search API would resolve both the rate-limiting and the occasional garbage-result problem in one change, since paid providers maintain higher-quality, less-restricted indexes. For this portfolio project, the more valuable lesson was learning to recognize when a problem has moved from "my code" to "the tool my code depends on" — and that documenting a known limitation honestly is better engineering than quietly patching around it with diminishing returns.
+
+---
+
 ## Week 05 — Overall Reflection
 
-This week's projects (and journal entries) look different from Weeks 2–4's: the earlier weeks' journals recorded bugs *found through actually running the code* — wrong model names, CSS rendering issues, an incorrect similarity metric caught by inspecting real output. This week's entries instead record engineering decisions made *while designing* the code — error handling strategy, fallback parsing, fabrication guards — because the natural next step, not yet done, is to actually run the full agent against Day 34's 15-question evaluation set and update this journal with what genuinely breaks. An agent is exactly the kind of system where design intentions and real behavior can diverge the most — which makes that upcoming evaluation step the one that will teach the most, same as it did in every previous week.
+This week's journal ended up in two parts, and that split is itself worth noting. The first pass (Days 29-35) recorded design decisions made *while building* — error handling strategy, fallback parsing, fabrication guards — because the code hadn't been run against real questions yet. The second pass (the post-ship audit) recorded what *actually broke* once it was: an empty search query from a token-budget mistake, a rate-limited search backend, a truncated report section, a keyword filter with a literal-but-wrong match, and an invisible-text theme bug. Every one of those was invisible from reading the code — they only surfaced by running real questions and looking closely at real output, the same lesson Weeks 2, 3, and 4 each taught in their own way. The genuinely new lesson this week was knowing when to stop patching: once the dominant failure mode became "the free search engine itself returned bad results," no further code change inside this project could fix that — the honest move was documenting it as a known limitation rather than chasing it with increasingly specific rules.
