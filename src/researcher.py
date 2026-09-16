@@ -16,6 +16,37 @@ from src.prompts import SYNTHESIS_SYSTEM_PROMPT, build_synthesis_prompt
 client = OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL)
 
 
+import re
+
+INSTRUCTIONAL_VERBS = [
+    "define", "identify", "explain", "describe", "summarize", "compare",
+    "analyze", "evaluate", "assess", "investigate", "conduct", "discuss",
+    "compile", "trace", "explore", "survey", "examine", "provide",
+    "illustrate", "gather", "collect", "outline", "determine", "develop",
+]
+
+
+def _clean_query(query: str) -> str:
+    """
+    Shared cleanup applied to a search query regardless of whether it
+    came from the LLM or the heuristic fallback. Fixes two concrete
+    issues found in testing:
+    1. Parenthetical examples leaking through incomplete/truncated,
+       e.g. "(e.g. prompting" — stripped entirely rather than trying
+       to patch every truncation pattern individually.
+    2. A leading instructional verb (e.g. "Compile concrete examples...")
+       causing the search to center on the verb itself (returning a
+       dictionary definition of "compile") instead of the actual topic.
+    Both fixes are applied here once, so future subtask phrasings that
+    hit either problem don't need a new special case added elsewhere.
+    """
+    query = re.sub(r"\([^)]*\)?", "", query)  # strip parens, even unclosed
+    words = query.split()
+    while words and words[0].lower().strip(".:;,") in INSTRUCTIONAL_VERBS:
+        words = words[1:]
+    return " ".join(words).strip()
+
+
 def generate_search_query(subtask: str) -> str:
     """
     Day 31 fix — converts a verbose, instructional subtask (e.g.
@@ -41,7 +72,8 @@ def generate_search_query(subtask: str) -> str:
             "content": (
                 f"Convert this research subtask into a short, specific web "
                 f"search query (3-8 words, no instructional phrasing like "
-                f"'define' or 'identify'). Return ONLY the query, nothing else.\n\n"
+                f"'define' or 'identify', no parenthetical examples). "
+                f"Return ONLY the query, nothing else.\n\n"
                 f"Subtask: {subtask}"
             ),
         }],
@@ -51,23 +83,20 @@ def generate_search_query(subtask: str) -> str:
                          # 30 was too low and produced empty content every time
     )
     query = (response.choices[0].message.content or "").strip().strip('"')
+    query = _clean_query(query)
 
     if query:
         return query
 
     # Fallback: strip common instructional verbs and take the first few
     # meaningful words, rather than sending an empty query to the search tool
-    return _fallback_query(subtask)
+    return _clean_query(_fallback_query(subtask))
 
 
 def _fallback_query(subtask: str) -> str:
     """Simple heuristic fallback if the LLM query-generation call fails."""
-    stop_prefixes = [
-        "define", "identify", "explain", "describe", "summarize", "compare",
-        "analyze", "evaluate", "assess", "investigate", "conduct", "discuss",
-        "the", "and", "or", "of", "for", "with", "a", "an",
-    ]
-    words = [w for w in subtask.replace(",", " ").split() if w.lower().strip(".:;") not in stop_prefixes]
+    stop_words = INSTRUCTIONAL_VERBS + ["the", "and", "or", "of", "for", "with", "a", "an"]
+    words = [w for w in subtask.replace(",", " ").split() if w.lower().strip(".:;") not in stop_words]
     return " ".join(words[:8]) if words else subtask[:60]
 
 
