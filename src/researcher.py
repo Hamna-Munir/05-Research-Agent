@@ -137,7 +137,9 @@ def execute_subtask(subtask: str, max_results: int = 3) -> dict:
         max_results: how many search results to gather for this subtask.
 
     Returns:
-        A dict with 'subtask', 'summary', and 'sources' (list of URLs).
+        A dict with 'subtask', 'search_query', 'summary', and 'sources'.
+        'sources' only ever contains URLs that passed relevance
+        filtering — a rejected source can never reach the final report.
     """
     search_query = generate_search_query(subtask)
     results = web_search(search_query, max_results=max_results)
@@ -148,11 +150,21 @@ def execute_subtask(subtask: str, max_results: int = 3) -> dict:
     if not results:
         return {"subtask": subtask, "search_query": search_query, "summary": "No search results found.", "sources": []}
 
-    # Search-quality fix: drop irrelevant/duplicate results before summarizing
-    results = _filter_and_dedupe(results, subtask)
+    # Search-quality fix: reject irrelevant/duplicate results before
+    # summarizing. If nothing survives filtering, say so honestly
+    # instead of asking the LLM to summarize unrelated content.
+    filtered_results = _filter_and_dedupe(results, subtask, search_query)
 
-    combined_text = "\n\n".join(f"{r['title']}: {r['snippet']}" for r in results)
-    sources = [r["url"] for r in results if r.get("url")]
+    if not filtered_results:
+        return {
+            "subtask": subtask,
+            "search_query": search_query,
+            "summary": "Insufficient relevant evidence was found for this subtask — the search returned results, but none were relevant enough to use.",
+            "sources": [],
+        }
+
+    combined_text = "\n\n".join(f"{r['title']}: {r['snippet']}" for r in filtered_results)
+    sources = [r["url"] for r in filtered_results if r.get("url")]
 
     summary_prompt = (
         f"Summarize the key information relevant to: '{subtask}'\n\n"
@@ -169,8 +181,6 @@ def execute_subtask(subtask: str, max_results: int = 3) -> dict:
         )
         summary = response.choices[0].message.content or "Could not generate a summary from the search results."
     except Exception as e:
-        # Reliability fix: a failed summarization call no longer crashes
-        # the whole research run — fall back to the raw search snippets.
         summary = f"(Summary generation failed — showing raw snippets) {combined_text[:400]}"
 
     return {
